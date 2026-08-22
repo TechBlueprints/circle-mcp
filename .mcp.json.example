@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "circle": {
+      "command": ".venv/bin/circle-mcp",
+      "env": {
+        "CIRCLE_USERNAME": "you@example.com",
+        "CIRCLE_PASSWORD": "your-circle-password",
+        "CIRCLE_AURA_PUBLIC_KEY": "circle_mobile_auth:...",
+        "CIRCLE_DEVICE_ID": "circle-mcp"
+      }
+    }
+  }
+}
