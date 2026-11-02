@@ -214,15 +214,23 @@ Recommendation: back `list_profiles` and `get_circle_status` with
 
 | Endpoint | Params | Returns | MCP |
 |----------|--------|---------|-----|
-| `/api/LOGS/usage/categories` | `user`, `day`, `ndays` | `report[]`, each with `data` = category id → minutes (B.7.7) | ✅ |
-| `/api/LOGS/usage/sites` | `user`, `day`, `ndays` | Per-site usage (declared by the app, never called; shape unverified) | ❌ |
+| `/api/LOGS/usage/categories` | `user`, `day`, `ndays` | `report[]`, each with `data` = category id → minutes (B.7.7). MCP `get_usage_categories` adds `categoryNames` | ✅ |
+| `/api/LOGS/usage/sites` | `user`, `day`, `ndays` | Per-site usage (declared by the app, never called; shape unverified). MCP `get_usage_by_site`, passed through raw | ✅ |
 | `/api/LOGS/usage` | `user`, `day`, `ndays` | ⚠️ MCP `get_usage`; not in the app | ⚠️ |
-| `/api/LOGS/history/{type}` | path `type` ∈ `allowed`, `blocked`; query `user`, `day`, `time`, `maxrecords`, `withcat` | Browsing history (B.7.8). The app sends `time=23:59`, `maxrecords=200`, `withcat=1` | ❌ |
+| `/api/LOGS/history/{type}` | path `type` ∈ `allowed`, `blocked`; query `user`, `day`, `time`, `maxrecords`, `withcat` | Browsing history (B.7.8). The app sends `time=23:59`, `maxrecords=200`, `withcat=1`. MCP `get_history` flattens `report[].data[].sites[]` | ✅ |
 
 **Time remaining for a profile** is not a single endpoint on either surface.
 Compute it as the profile's `timeLimits` (B.7.1) plus today's
 `extensions.limits`, minus the minutes in `/api/LOGS/usage/categories` for
-`day=0`.
+`day=0`. MCP `get_time_remaining` does this (✅). How the limit fields read:
+
+- A limit's `days` is the word `weekdays` or `weekend`, not day indices; a
+  missing value means `weekdays`. A category can therefore have one limit of
+  each kind. Today is a weekend day when its index (Sunday = `0`) appears in
+  the profile's `weekend` string, judged in `overall.timezone`.
+- `minutes` of `-1` means no limit for that day type.
+- Category `T` is the total limit across all categories; its usage is the
+  sum of every category in the day's report.
 
 ## B.4 Profiles 🔒
 

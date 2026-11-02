@@ -14,7 +14,10 @@ the `mcp` SDK.
 |------|---------|
 | `list_profiles` | Family profiles (pid, name, type) |
 | `get_usage` | Detailed usage for a profile (`day`=days ago, `ndays`=span) |
-| `get_usage_categories` | Usage by category (games, social, video, ...) |
+| `get_usage_categories` | Usage by category (games, social, video, ...), with `categoryNames` for the ids |
+| `get_usage_by_site` | Usage by site for a profile (raw Circle report) |
+| `get_history` | Allowed or blocked sites visited (`kind`), flattened: site, time, state, category, device uid |
+| `get_time_remaining` | Minutes left today per limited category (limit + today's extensions − used), paused / limits-on flags |
 | `get_circle_status` | Circle device/account status |
 
 ## Setup

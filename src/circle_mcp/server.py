@@ -37,6 +37,7 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from .provider import CircleAuthError, CircleClient
+from .tools import usage as usage_tools
 
 log = logging.getLogger("circle_mcp")
 
@@ -183,6 +184,9 @@ def get_circle_status() -> dict:
     """Get Circle device/account status."""
     result = _call("get_circle_status")
     return result if result is not None else {"error": "Failed to fetch Circle status"}
+
+
+usage_tools.register(server, _call, _lock)
 
 
 # -----------------------------
