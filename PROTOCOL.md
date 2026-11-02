@@ -256,36 +256,47 @@ whole list; the app always sends that with comma-separated parallel lists.
 
 | Endpoint | Params | Notes | MCP |
 |----------|--------|-------|-----|
-| `/api/ADD/users/user/timeLimits/limit` | `user.pid`, `clear=true`, `category` (comma list of ids), `limit` (minutes, parallel), `days` (day-index strings, parallel), `weekend` (day-index string), `toggle` (`On`/`Off`) | Replaces every limit in one call | ❌ |
-| `/api/ADD/users/user/extensions/limits/extension` | `user.pid`, `clear=true`, `category`, `minutes` (comma lists) | Extra minutes today per category | ❌ |
-| `/api/ADD/users/user/extensions/offTimes/extension` | `user.pid`, `clear=true`, `offTimeId`, `startMinutes`, `endMinutes` (comma lists) | One-off change to today's off-time window | ❌ |
+| `/api/ADD/users/user/timeLimits/limit` | `user.pid`, `clear=true`, `category` (comma list of ids), `limit` (minutes, parallel), `days` (parallel; each `weekdays` or `weekend`), `weekend` (day-index string), `toggle` (`On`/`Off`) | Replaces every limit in one call | ✅ |
+| `/api/ADD/users/user/extensions/limits/extension` | `user.pid`, `clear=true`, `category`, `minutes`, `date` (comma lists) | Extra minutes today per category | ✅ |
+| `/api/ADD/users/user/extensions/offTimes/extension` | `user.pid`, `clear=true`, `offTimeId`, `startMinutes`, `endMinutes`, `date` (comma lists) | One-off change to today's off-time window | ✅ |
+
+A time limit is not tied to day indices: its `days` entry picks the
+weekday or weekend allowance, and the profile's `weekend` string says which
+days are the weekend. Both extension calls replace the whole list for the
+profile, so a new reward has to be sent together with the ones already
+granted today (read them from `extensions` in B.7.1). `date` is `0` for
+"today" on a new entry; the server reports dates as `YYYYMMDD`.
+`startMinutes`/`endMinutes` shift the window's start/end by that many
+minutes.
 
 ### B.4.3 Off times (legacy bedtime) 🔒
 
 | Endpoint | Params | MCP |
 |----------|--------|-----|
-| `/api/ADD/users/user/flexOffTimes/offTime` | `user.pid`, `name`, `type` (`bedtime_weekday`, `bedtime_weekend`, `offtime`), `start`, `end`, `days`, `toggle` (`enabled`/`disabled`), `id`, `clear=true` — all comma-separated parallel lists | ❌ |
+| `/api/ADD/users/user/flexOffTimes/offTime` | `user.pid`, `name`, `type` (`bedtime_weekday`, `bedtime_weekend`, `offtime`), `start`, `end`, `days`, `toggle` (`enabled`/`disabled`), `id`, `clear=true` — all comma-separated parallel lists | ✅ |
 
 ### B.4.4 Bedtimes v2 🔒 (JSON)
 
 | Method / path | Body | MCP |
 |---------------|------|-----|
-| `GET /api/v2/profiles/bedtimes` | → `[{pid, bedtimes:[BedTime]}]` | ❌ |
-| `POST /api/v2/profiles/{pid}/bedtimes` | BedTime | ❌ |
-| `PUT /api/v2/profiles/{pid}/bedtimes/{id}` | BedTime | ❌ |
+| `GET /api/v2/profiles/bedtimes` | → `[{pid, bedtimes:[BedTime]}]` | ✅ |
+| `POST /api/v2/profiles/{pid}/bedtimes` | BedTime | ✅ |
+| `PUT /api/v2/profiles/{pid}/bedtimes/{id}` | BedTime | ✅ |
 
 BedTime = `{id, pid, name, start, end, days:[dayNames], state}`,
 `state` ∈ `enabled`, `disabled`.
+`id` and `pid` are JSON numbers in both v2 bodies, as are the category ids
+in FocusTime `filters`.
 
 ### B.4.5 Focus times v2 🔒 (JSON)
 
 | Method / path | Body | MCP |
 |---------------|------|-----|
-| `GET /api/v2/profiles/focustimes` | → `[{pid, focustimes:[FocusTime]}]` | ❌ |
-| `GET /api/v2/focustimes/defaults` | → default filter sets | ❌ |
-| `POST /api/v2/profiles/{pid}/focustimes` | FocusTime | ❌ |
-| `PUT /api/v2/profiles/{pid}/focustimes/{id}` | FocusTime | ❌ |
-| `DELETE /api/v2/profiles/{pid}/focustimes/{id}` | – | ❌ |
+| `GET /api/v2/profiles/focustimes` | → `[{pid, focustimes:[FocusTime]}]` | ✅ |
+| `GET /api/v2/focustimes/defaults` | → default filter sets | ✅ |
+| `POST /api/v2/profiles/{pid}/focustimes` | FocusTime | ✅ |
+| `PUT /api/v2/profiles/{pid}/focustimes/{id}` | FocusTime | ✅ |
+| `DELETE /api/v2/profiles/{pid}/focustimes/{id}` | – | ✅ |
 
 FocusTime = `{id, pid, name, start, end, days:[dayNames], enabled,
 applyFilters, filters:{allowed:[catId], blocked:[catId], allowedURLs:[],

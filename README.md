@@ -16,6 +16,19 @@ the `mcp` SDK.
 | `get_usage` | Detailed usage for a profile (`day`=days ago, `ndays`=span) |
 | `get_usage_categories` | Usage by category (games, social, video, ...) |
 | `get_circle_status` | Circle device/account status |
+| `list_bedtimes` | Bedtimes for every profile |
+| `list_focus_times` | Focus times (homework hours etc.) for every profile |
+| `get_focus_time_defaults` | Default filter sets for a new focus time |
+| `set_time_limits` ✏️ | Replace a profile's daily time limits and weekend days |
+| `add_reward_minutes` ✏️ | Extra minutes today in one category (keeps today's other rewards) |
+| `extend_off_time_today` ✏️ | Move today's start/end of one off time (e.g. later bedtime tonight) |
+| `set_off_times` ✏️ | Replace a profile's legacy off-time windows |
+| `add_bedtime` / `update_bedtime` ✏️ | Create or replace a bedtime |
+| `add_focus_time` / `update_focus_time` / `delete_focus_time` ✏️ | Create, replace, or remove a focus time |
+
+✏️ = changes settings on the Circle; registered only when `CIRCLE_MCP_ALLOW_WRITES`
+is `1`/`true`/`yes`/`on`. Days are weekday names or indices with Sunday = 0;
+times are 24-hour `HH:mm`.
 
 ## Setup
 

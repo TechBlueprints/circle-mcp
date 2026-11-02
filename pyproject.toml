@@ -5,6 +5,9 @@ description = "MCP server exposing Circle (Meetcircle/Aura) parental-control dat
 requires-python = ">=3.10"
 dependencies = ["mcp>=2.0.0,<3"]
 
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
 [project.scripts]
 circle-mcp = "circle_mcp.server:main"
 

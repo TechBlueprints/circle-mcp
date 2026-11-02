@@ -25,12 +25,14 @@ import urllib.request
 import urllib.error
 from typing import Optional, Dict, List
 
+from .api.schedules import SchedulesMixin
+
 
 class CircleAuthError(RuntimeError):
     """Sign-in or token grant rejected by the Circle/Aura API."""
 
 
-class CircleClient:
+class CircleClient(SchedulesMixin):
     """Read-only client for Circle parental controls."""
 
     DEFAULT_AURA_BASE = "https://api.aurasvc.io"
