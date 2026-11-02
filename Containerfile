@@ -6,12 +6,13 @@ FROM python:3.13-slim
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_ROOT_USER_ACTION=ignore \
     CIRCLE_MCP_TRANSPORT=streamable-http \
     CIRCLE_MCP_HOST=0.0.0.0 \
     CIRCLE_MCP_PORT=8080 \
     CIRCLE_SECRETS_FILE=/config/secrets.conf
 
-RUN useradd --system --uid 10001 --create-home --home-dir /app circle
+RUN useradd --uid 10001 --create-home --home-dir /app --shell /usr/sbin/nologin circle
 WORKDIR /src
 COPY pyproject.toml README.md ./
 COPY src/ src/

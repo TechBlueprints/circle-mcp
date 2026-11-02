@@ -55,9 +55,14 @@ is gitignored, since it typically embeds credentials or machine-specific paths.
 | `CIRCLE_MCP_HOST` / `CIRCLE_MCP_PORT` | `0.0.0.0` / `8080` | Bind address (`--host`, `--port`) |
 | `CIRCLE_MCP_KEYS` | (none) | Comma list of accepted bearer keys, each `key` or `id:key`. **Required**: the HTTP transport refuses to start without one |
 | `CIRCLE_MCP_ALLOWED_HOSTS` | localhost only | Comma list of accepted `Host` headers (DNS-rebinding protection, 421 otherwise); `*` turns the check off |
+| `CIRCLE_MCP_AUTH_BACKOFF_S` | `900` | After Circle rejects the sign-in, refuse further sign-in attempts for this long (repeated bad logins could lock the account) |
 
 Every request except `/health` needs `Authorization: Bearer <key>`; anything else gets 401.
 Keys are compared in constant time; the `id` part only names the key in the startup log.
+
+Circle failures (not configured, sign-in rejected, API errors) come back to the client as
+tool errors with the reason; after a rejected sign-in `/health` also shows `circle_auth_error`.
+The backoff applies to every transport.
 
 Container (`Containerfile`: python:3.13-slim, non-root uid 10001, HEALTHCHECK on `/health`,
 `CIRCLE_SECRETS_FILE=/config/secrets.conf`):

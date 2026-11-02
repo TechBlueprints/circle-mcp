@@ -29,11 +29,14 @@ import json
 import logging
 import os
 import threading
+import time
+import urllib.error
 from typing import Optional
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
-from .provider import CircleClient
+from .provider import CircleAuthError, CircleClient
 
 log = logging.getLogger("circle_mcp")
 
@@ -43,6 +46,11 @@ _client = None
 # Sync tools run in worker threads under HTTP; the client's token state is not
 # thread-safe, so Circle calls are serialized.
 _lock = threading.Lock()
+# After a rejected sign-in, do not try again for a while: repeated bad logins
+# could lock the Circle account. CIRCLE_MCP_AUTH_BACKOFF_S, default 15 minutes.
+_AUTH_BACKOFF_S = int(os.environ.get("CIRCLE_MCP_AUTH_BACKOFF_S", "900"))
+_auth_error = ""
+_auth_retry_at = 0.0
 
 
 def _read_secrets_file(path: str) -> dict:
@@ -96,11 +104,36 @@ def _circle() -> CircleClient:
             )
         _client = client
     if _client.ensure_admin_token() is None:
-        raise RuntimeError(
+        raise CircleAuthError(
             "Circle login failed (the API rejected the stored credentials — "
             "check the circle username/password/aura_public_key)"
         )
     return _client
+
+
+def _call(method: str, **kwargs):
+    """Run one CircleClient call under the lock; anticipated failures become ToolErrors."""
+    global _auth_error, _auth_retry_at
+    with _lock:
+        now = time.time()
+        if _auth_error and now < _auth_retry_at:
+            raise ToolError(
+                f"{_auth_error} (not retrying sign-in until "
+                f"{time.strftime('%H:%M:%S %Z', time.localtime(_auth_retry_at))} to avoid locking the account)"
+            )
+        try:
+            result = getattr(_circle(), method)(**kwargs)
+        except CircleAuthError as e:
+            _auth_error, _auth_retry_at = str(e), now + _AUTH_BACKOFF_S
+            raise ToolError(str(e)) from e
+        except (RuntimeError, ValueError) as e:
+            raise ToolError(str(e)) from e
+        except urllib.error.HTTPError as e:
+            raise ToolError(f"Circle API returned HTTP {e.code} for {method}") from e
+        except (urllib.error.URLError, OSError) as e:
+            raise ToolError(f"Circle API unreachable: {getattr(e, 'reason', e)}") from e
+        _auth_error, _auth_retry_at = "", 0.0
+        return result
 
 
 server = MCPServer(
@@ -116,8 +149,7 @@ server = MCPServer(
 @server.tool()
 def list_profiles() -> list:
     """List Circle family profiles (pid, name, type). Use the pid with the usage tools."""
-    with _lock:
-        return _circle().list_profiles()
+    return _call("list_profiles")
 
 
 @server.tool()
@@ -129,8 +161,7 @@ def get_usage(profile_pid: Optional[str] = None, day: str = "0", ndays: str = "1
         day: Days ago to start (0 = today)
         ndays: Number of days to include
     """
-    with _lock:
-        return _circle().get_profile_usage(profile_pid=profile_pid, day=day, ndays=ndays)
+    return _call("get_profile_usage", profile_pid=profile_pid, day=day, ndays=ndays)
 
 
 @server.tool()
@@ -144,15 +175,13 @@ def get_usage_categories(
         day: Days ago to start (0 = today)
         ndays: Number of days to include
     """
-    with _lock:
-        return _circle().get_usage_categories(profile_pid=profile_pid, day=day, ndays=ndays)
+    return _call("get_usage_categories", profile_pid=profile_pid, day=day, ndays=ndays)
 
 
 @server.tool()
 def get_circle_status() -> dict:
     """Get Circle device/account status."""
-    with _lock:
-        result = _circle().get_circle_status()
+    result = _call("get_circle_status")
     return result if result is not None else {"error": "Failed to fetch Circle status"}
 
 
@@ -253,7 +282,10 @@ def build_http_app(keys: dict, allowed_hosts: str = ""):
     async def health(_request):
         cfg = _load_config()
         configured = bool(cfg.get("admin_token") or (cfg.get("username") and cfg.get("password")))
-        return JSONResponse({"status": "ok", "circle_configured": configured, "mcp_keys": len(keys)})
+        body = {"status": "ok", "circle_configured": configured, "mcp_keys": len(keys)}
+        if _auth_error:
+            body["circle_auth_error"] = _auth_error
+        return JSONResponse(body)
 
     app = server.streamable_http_app(
         stateless_http=True,
