@@ -86,7 +86,97 @@ Client registration (Claude Code `.mcp.json` or any streamable-HTTP client):
  "headers": {"Authorization": "Bearer <key>"}}
 ```
 
+## Deployment runbook
+
+How to install, run, talk to, update and retire the HTTP server. Hostnames, ports and keys
+below are examples; a private ops repo normally wraps these steps in a script (ours is
+`home-setup/scripts/install-circle-mcp-on-podman.sh`, which reads the key and the `circle.*`
+lines from a secrets repo and does everything in "Install" and "Update" idempotently).
+
+### Install (first time, on the container host)
+
+1. Put the Circle credentials in a file the container can read, `circle.*` lines only:
+   ```ini
+   circle.username = you@example.com
+   circle.password = ...
+   circle.device_id = circle-mcp
+   circle.aura_public_key = circle_mobile_auth:...
+   ```
+   The container runs as uid 10001, so the file must be readable by that uid
+   (`chown 10001 secrets.conf && chmod 0400 secrets.conf`).
+2. Generate one bearer key per client: `python3 -c 'import secrets;print(secrets.token_urlsafe(32))'`.
+   Record it with the client's name in your secrets store; it is not recoverable from the server.
+3. Ship the source and build (from a checkout, `HEAD` or a tag):
+   ```bash
+   REV=$(git rev-parse --short HEAD)
+   git archive --format=tar HEAD | ssh root@host "mkdir -p /root/circle-mcp-src-$REV && tar -x -C /root/circle-mcp-src-$REV"
+   ssh root@host "cd /root/circle-mcp-src-$REV && podman build --format docker -t localhost/circle-mcp:$REV . && podman tag localhost/circle-mcp:$REV localhost/circle-mcp:latest"
+   ```
+4. Run it (see [HTTP / container](#http--container) for every env var). `CIRCLE_MCP_ALLOWED_HOSTS`
+   must list every `Host:` header a client will send, with and without the port, or the client
+   gets HTTP 421. Open the port in the host firewall (`firewall-cmd --add-port=3005/tcp --permanent`).
+5. Check: `curl -s http://host:3005/health` → `{"status":"ok","circle_configured":true,"mcp_keys":1}`.
+
+### Talk to it
+
+```bash
+# list tools (expect 4)
+curl -s -X POST http://host:3005/mcp -H 'Authorization: Bearer <key>' \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+# call one
+curl -s -X POST http://host:3005/mcp -H 'Authorization: Bearer <key>' \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_profiles","arguments":{}}}'
+```
+
+Responses are plain JSON (stateless; no session header needed). Register the server in a client as
+shown above; for a Hermes Agent gateway:
+
+```yaml
+mcp_servers:
+  circle:
+    url: http://host:3005/mcp
+    headers:
+      Authorization: Bearer ${CIRCLE_MCP_KEY}   # resolved from the gateway's env at connect time
+    tools: {resources: false, prompts: false}
+```
+
+### Read the logs and understand the errors
+
+- `podman logs --tail 50 circle-mcp`: one line per request plus the key id that authenticated.
+- `401 unauthorized`: no or wrong bearer key. `421 Misdirected Request`: the `Host:` header is not in
+  `CIRCLE_MCP_ALLOWED_HOSTS`. Both are the server, not Circle.
+- A tool error `Aura sign-in failed: HTTP 401 {"message":"InvalidCredentials"}` is Circle rejecting
+  the account email/password (the API key was accepted); `NoCredential` means the
+  `aura_public_key` is wrong. After one rejection the server refuses to retry for
+  `CIRCLE_MCP_AUTH_BACKOFF_S` (15 min) and `/health` shows `circle_auth_error`; fix the
+  credentials file and restart the container to clear it. Repeated bad logins can lock the
+  Circle account, so do not loop.
+
+### Update (new code or new credentials)
+
+Rebuild with a new `REV` as in Install, then recreate the container with the same `podman run`
+line (`podman stop -t 10 circle-mcp && podman rm circle-mcp` first). Keep the previous image tag
+for rollback. Changing only `secrets.conf` or the env file needs just the stop/rm/run.
+
+### Rotate a bearer key
+
+Generate a new key, replace it in `CIRCLE_MCP_KEYS` (several keys may be listed during the
+switch), recreate the container, update the client, then drop the old key and recreate again.
+Clients holding the old key get 401 immediately.
+
+### Retire
+
+`podman stop circle-mcp && podman rm circle-mcp`, remove the firewall port, delete the secrets
+file and the `/root/circle-mcp-src-*` directories, and revoke the keys in the clients.
+
 ## API notes (2026-08)
+
+The full endpoint catalog (parent and child-device surfaces, with MCP coverage)
+is in [PROTOCOL.md](PROTOCOL.md). The notes below cover only what the server
+implements today.
+
 
 Auth flow:
 
