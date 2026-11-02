@@ -39,6 +39,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from .provider import CircleAuthError, CircleClient
 from .tools import state as state_tools
 from .tools import usage as usage_tools
+from .tools import profiles as profile_tools
 
 log = logging.getLogger("circle_mcp")
 
@@ -190,6 +191,7 @@ def get_circle_status() -> dict:
 
 state_tools.register(server, _call, _lock)
 usage_tools.register(server, _call, _lock)
+profile_tools.register(server, _circle, _lock)
 
 
 # -----------------------------
