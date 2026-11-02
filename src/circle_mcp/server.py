@@ -118,20 +118,34 @@ def _circle() -> CircleClient:
     return _client
 
 
+def _circle_guarded() -> CircleClient:
+    """`_circle()` with the sign-in back-off applied; the caller must hold `_lock`.
+
+    Tool modules that run several client calls under one lock use this as
+    their client getter so a rejected sign-in is not retried for a while.
+    """
+    global _auth_error, _auth_retry_at
+    now = time.time()
+    if _auth_error and now < _auth_retry_at:
+        raise ToolError(
+            f"{_auth_error} (not retrying sign-in until "
+            f"{time.strftime('%H:%M:%S %Z', time.localtime(_auth_retry_at))} to avoid locking the account)"
+        )
+    try:
+        client = _circle()
+    except CircleAuthError as e:
+        _auth_error, _auth_retry_at = str(e), now + _AUTH_BACKOFF_S
+        raise
+    _auth_error, _auth_retry_at = "", 0.0
+    return client
+
+
 def _call(method: str, **kwargs):
     """Run one CircleClient call under the lock; anticipated failures become ToolErrors."""
-    global _auth_error, _auth_retry_at
     with _lock:
-        now = time.time()
-        if _auth_error and now < _auth_retry_at:
-            raise ToolError(
-                f"{_auth_error} (not retrying sign-in until "
-                f"{time.strftime('%H:%M:%S %Z', time.localtime(_auth_retry_at))} to avoid locking the account)"
-            )
         try:
-            result = getattr(_circle(), method)(**kwargs)
+            result = getattr(_circle_guarded(), method)(**kwargs)
         except CircleAuthError as e:
-            _auth_error, _auth_retry_at = str(e), now + _AUTH_BACKOFF_S
             raise ToolError(str(e)) from e
         except (RuntimeError, ValueError) as e:
             raise ToolError(str(e)) from e
@@ -139,7 +153,6 @@ def _call(method: str, **kwargs):
             raise ToolError(f"Circle API returned HTTP {e.code} for {method}") from e
         except (urllib.error.URLError, OSError) as e:
             raise ToolError(f"Circle API unreachable: {getattr(e, 'reason', e)}") from e
-        _auth_error, _auth_retry_at = "", 0.0
         return result
 
 
@@ -194,7 +207,7 @@ def get_circle_status() -> dict:
 
 state_tools.register(server, _call, _lock)
 usage_tools.register(server, _call, _lock)
-profile_tools.register(server, _circle, _lock)
+profile_tools.register(server, _circle_guarded, _lock)
 schedules_tools.register(server, _call, _lock)
 devices_tools.register(server, _call, _lock)
 godevice_tools.register(server, _call, _lock)
