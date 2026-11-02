@@ -3,7 +3,7 @@ name = "circle-mcp"
 version = "0.1.0"
 description = "MCP server exposing Circle (Meetcircle/Aura) parental-control data"
 requires-python = ">=3.10"
-dependencies = ["mcp>=2.0.0"]
+dependencies = ["mcp>=2.0.0,<3"]
 
 [project.scripts]
 circle-mcp = "circle_mcp.server:main"

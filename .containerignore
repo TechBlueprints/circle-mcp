@@ -1,0 +1,6 @@
+.git
+.venv
+.mcp.json
+clean-room
+**/__pycache__
+**/*.egg-info

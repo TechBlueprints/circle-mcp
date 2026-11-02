@@ -1,7 +1,8 @@
 # circle-mcp
 
-MCP server (stdio) exposing read-only [Circle](https://meetcircle.com) (Meetcircle/Aura)
-parental-control data: family profiles and per-profile internet usage.
+MCP server exposing read-only [Circle](https://meetcircle.com) (Meetcircle/Aura)
+parental-control data: family profiles and per-profile internet usage. Runs over
+stdio (default) or streamable HTTP behind bearer keys (see [HTTP / container](#http--container)).
 
 Extracted from the airstream-dashboard Circle provider, which is where the API
 client and its auth flow come from. Stdlib-only client; the only dependency is
@@ -42,6 +43,43 @@ which keeps credentials out of your MCP client config.
 Claude Code registration: copy `.mcp.json.example` to `.mcp.json` and fill in your
 credentials (or point `CIRCLE_SECRETS_FILE` at a conf file holding them). `.mcp.json`
 is gitignored, since it typically embeds credentials or machine-specific paths.
+
+## HTTP / container
+
+`--transport streamable-http` (or `CIRCLE_MCP_TRANSPORT=streamable-http`) serves MCP at
+`/mcp` with stateless JSON responses, plus an unauthenticated `GET /health`.
+
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `CIRCLE_MCP_TRANSPORT` | `stdio` | `stdio` or `streamable-http` (`--transport`) |
+| `CIRCLE_MCP_HOST` / `CIRCLE_MCP_PORT` | `0.0.0.0` / `8080` | Bind address (`--host`, `--port`) |
+| `CIRCLE_MCP_KEYS` | (none) | Comma list of accepted bearer keys, each `key` or `id:key`. **Required**: the HTTP transport refuses to start without one |
+| `CIRCLE_MCP_ALLOWED_HOSTS` | localhost only | Comma list of accepted `Host` headers (DNS-rebinding protection, 421 otherwise); `*` turns the check off |
+
+Every request except `/health` needs `Authorization: Bearer <key>`; anything else gets 401.
+Keys are compared in constant time; the `id` part only names the key in the startup log.
+
+Container (`Containerfile`: python:3.13-slim, non-root uid 10001, HEALTHCHECK on `/health`,
+`CIRCLE_SECRETS_FILE=/config/secrets.conf`):
+
+```bash
+podman build --format docker -t localhost/circle-mcp:latest .
+podman run -d --name circle-mcp --restart unless-stopped \
+  -e CIRCLE_MCP_KEYS="client1:$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')" \
+  -e CIRCLE_MCP_ALLOWED_HOSTS="localhost:8080,127.0.0.1:8080,myhost.example:3005" \
+  -p 3005:8080 -v /path/to/secrets.conf:/config/secrets.conf:ro,Z \
+  localhost/circle-mcp:latest
+```
+
+`--format docker` matters: podman's default OCI format drops `HEALTHCHECK`. The secrets file
+only needs the `circle.*` lines from [Configuration](#configuration).
+
+Client registration (Claude Code `.mcp.json` or any streamable-HTTP client):
+
+```json
+{"type": "http", "url": "http://myhost.example:3005/mcp",
+ "headers": {"Authorization": "Bearer <key>"}}
+```
 
 ## API notes (2026-08)
 
