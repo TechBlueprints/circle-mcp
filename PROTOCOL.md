@@ -54,7 +54,7 @@ Production values:
 | `platform_builder`, `history_buff` | `platform-builder…`, `history-buff…` | 443 | Internal tooling (app-signature building, log listing) |
 | `redirect_cert` | `redirect-cert.meetcircle-blue.co` | 443 | CA certificate used by the block page |
 | `mycircle` | `dashboard.meetcircle-blue.com` | 443 | Web dashboard (not an API) |
-| `cognito`, `cognito_v2` | `signin…`, `subscribe…` | 443 | Legacy (pre-Aura) login |
+| `cognito`, `cognito_v2` | `signin…`, `subscribe…` | 443 | Pre-Aura login web flows (password reset, subscribe); the sign-in itself goes to AWS Cognito, B.1.5 |
 
 Non-prod hosts follow `<role>.<env>.test.meetcircle-blue.co`; the Aura test
 API is `api.test.aurasvc.io`. Everything is HTTPS.
@@ -180,11 +180,26 @@ Response: `{"host": "<vc host for this circle>"}`. Stored and used in place
 of the default `vc` host when non-empty. The MCP looks it up after each fresh
 grant, keeps the default on any failure, and skips it when `CIRCLE_VC_HOST` is set.
 
-### B.1.5 Legacy Cognito login (informational)
+### B.1.5 Cognito login ✅
 
-Pre-Aura accounts authenticate against an AWS Cognito user pool
-(`us-west-2_TiQsgtChT`, app client `fd7ail96985e3p3omb792ko0f`, SRP flow)
-and then run the same admin grant with the Cognito id token as `jwt`.
+Accounts from before the Aura migration are not in Aura at all: sending them
+to B.1.1 yields `401 InvalidCredentials` whatever the password. They sign in
+against an AWS Cognito user pool instead, and the app takes whichever token it
+holds (Aura access token, else Cognito id token) as the `jwt` of the admin
+grant (B.1.3).
+
+| Item | Value |
+|------|-------|
+| Region / pool | `us-west-2` / `us-west-2_TiQsgtChT` |
+| App client | `fd7ail96985e3p3omb792ko0f`, no client secret |
+| Flow | `USER_SRP_AUTH` on `https://cognito-idp.us-west-2.amazonaws.com/` (`X-Amz-Target: AWSCognitoIdentityProviderService.InitiateAuth` / `…RespondToAuthChallenge`, `Content-Type: application/x-amz-json-1.1`) |
+| Username | the account email |
+| Result | `AuthenticationResult.IdToken` (the grant `jwt`), `AccessToken`, `RefreshToken` |
+| Refresh | `InitiateAuth` with `AuthFlow: REFRESH_TOKEN_AUTH`, `AuthParameters.REFRESH_TOKEN`; returns new id/access tokens, no new refresh token |
+| Errors | `UserNotFoundException` = not a Cognito account (try Aura); `NotAuthorizedException` = wrong password; any other `ChallengeName` (MFA, new password) is unsupported here |
+
+MCP: `cognito.py` (stdlib SRP), selected by `auth_method` = `auto` (Cognito
+probe, Aura fallback on unknown user), `cognito`, or `aura`.
 
 ### B.1.6 Headers on admin calls
 

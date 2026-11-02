@@ -3,15 +3,21 @@ Circle (Meetcircle / Aura) API client.
 
 Auth flow:
 
-1. Sign in to Aura (`POST {aura}/auth/session/signin`, `Authorization: Public <key>`)
-   with the account email/password -> access_token + refresh_token
+1. Get an identity JWT for the account, by one of two backends:
+   - Aura: `POST {aura}/auth/session/signin` with `Authorization: Public <key>`
+     and the email/password -> access_token + refresh_token
+   - Cognito (accounts from before the Aura migration): USER_SRP_AUTH against
+     the Circle user pool -> id_token + refresh_token (see cognito.py)
+   `auth_method` picks one; "auto" tries Cognito and falls back to Aura when
+   the pool does not know the user (a probe that costs no password attempt).
 2. Grant an admin token (`POST {auth}/api/v2/grant/admin`) with
-   {"deviceid": ..., "jwt": <access_token>} -> admin token
+   {"deviceid": ..., "jwt": <identity jwt>} -> admin token
 3. Call VC endpoints (`{vc}/api/...`) with `Authorization: Bearer <admin_token>`
 
 Error semantics observed from the live API (2026-08):
 - 401 {"message": "NoCredential"}       -> missing/invalid `Authorization: Public <key>` header
 - 401 {"message": "InvalidCredentials"} -> key accepted, username/password rejected
+  (also what a Cognito-era account gets from Aura, whatever the password)
 
 Stdlib only; no external dependencies.
 """
@@ -24,6 +30,8 @@ import urllib.parse
 import urllib.request
 import urllib.error
 from typing import Optional, Dict
+
+from .cognito import CognitoError, CognitoSrp
 
 from .api.state import StateMixin, base_url
 
@@ -48,6 +56,10 @@ class CircleClient(StateMixin, UsageMixin, ProfilesMixin, SchedulesMixin, Device
     DEFAULT_AURA_BASE = "https://api.aurasvc.io"
     DEFAULT_AUTH_BASE = "https://auth.meetcircle-blue.co"
     DEFAULT_VC_BASE = "https://vc.meetcircle-blue.co"
+    # Circle's production Cognito user pool / mobile app client (no client secret).
+    DEFAULT_COGNITO_POOL_ID = "us-west-2_TiQsgtChT"
+    DEFAULT_COGNITO_CLIENT_ID = "fd7ail96985e3p3omb792ko0f"
+    AUTH_METHODS = ("auto", "aura", "cognito")
 
     def __init__(
         self,
@@ -62,7 +74,13 @@ class CircleClient(StateMixin, UsageMixin, ProfilesMixin, SchedulesMixin, Device
         vc_base_url: str = "",
         user_agent: str = "circle-mcp/1.0",
         timeout_s: int = 30,
+        auth_method: str = "auto",
+        cognito_pool_id: str = "",
+        cognito_client_id: str = "",
     ):
+        auth_method = (auth_method or "auto").strip().lower()
+        if auth_method not in self.AUTH_METHODS:
+            raise ValueError(f"auth_method must be one of {self.AUTH_METHODS}, not {auth_method!r}")
         self._username = username
         self._password = password
         self._device_id = device_id
@@ -77,10 +95,20 @@ class CircleClient(StateMixin, UsageMixin, ProfilesMixin, SchedulesMixin, Device
         self._user_agent = user_agent
         self._timeout_s = timeout_s
 
+        self._auth_method = auth_method
+        self._cognito = CognitoSrp(
+            cognito_pool_id or self.DEFAULT_COGNITO_POOL_ID,
+            cognito_client_id or self.DEFAULT_COGNITO_CLIENT_ID,
+        )
+
         self._ssl_ctx = None
         self._circle_id = None
         self._aura_access_token = None
         self._aura_refresh_token = None
+        self._cognito_id_token = None
+        self._cognito_refresh_token = None
+        # "auto" settles on the backend that accepted the account.
+        self._auth_backend = auth_method if auth_method != "auto" else None
 
     @property
     def is_configured(self) -> bool:
@@ -129,10 +157,7 @@ class CircleClient(StateMixin, UsageMixin, ProfilesMixin, SchedulesMixin, Device
         if not self._username or not self._password:
             return self._admin_token or None
 
-        if not self._aura_public_key:
-            raise ValueError("aura_public_key is required for username/password login")
-
-        access = self._ensure_aura_access_token()
+        access = self._ensure_identity_jwt()
         if not access:
             return None
 
@@ -152,9 +177,61 @@ class CircleClient(StateMixin, UsageMixin, ProfilesMixin, SchedulesMixin, Device
             self._discover_vc_host()
         return admin_token or None
 
+    @property
+    def auth_backend(self) -> Optional[str]:
+        """Which sign-in backend is in use ("aura"/"cognito"); None until "auto" has decided."""
+        return self._auth_backend
+
+    def _ensure_identity_jwt(self) -> Optional[str]:
+        """The JWT the admin grant takes: an Aura access token or a Cognito id token."""
+        if self._auth_backend == "aura":
+            return self._ensure_aura_access_token()
+        if self._auth_backend == "cognito":
+            return self._ensure_cognito_id_token()
+        # auto: Cognito first. An unknown user there is not a password failure,
+        # so the probe cannot lock the account; anything else is reported as is.
+        try:
+            token = self._ensure_cognito_id_token()
+        except CircleAuthError as e:
+            if not getattr(e, "user_not_found", False):
+                raise
+            self._auth_backend = "aura"
+            return self._ensure_aura_access_token()
+        self._auth_backend = "cognito"
+        return token
+
+    def _ensure_cognito_id_token(self) -> Optional[str]:
+        if self._cognito_id_token and not _jwt_is_expired(self._cognito_id_token, leeway_s=60):
+            return self._cognito_id_token
+
+        if self._cognito_refresh_token:
+            try:
+                tokens = self._cognito.refresh(self._cognito_refresh_token)
+                if tokens.get("id_token"):
+                    self._cognito_id_token = tokens["id_token"]
+                    self._cognito_refresh_token = tokens.get("refresh_token") or self._cognito_refresh_token
+                    return self._cognito_id_token
+            except Exception:
+                pass  # fall through to full sign-in
+
+        try:
+            tokens = self._cognito.sign_in(self._username, self._password)
+        except CognitoError as e:
+            err = CircleAuthError(f"Cognito sign-in failed: {e}")
+            err.user_not_found = e.user_not_found
+            raise err from e
+        if not tokens.get("id_token"):
+            return None
+        self._cognito_id_token = tokens["id_token"]
+        self._cognito_refresh_token = tokens.get("refresh_token")
+        return self._cognito_id_token
+
     def _ensure_aura_access_token(self) -> Optional[str]:
         if self._aura_access_token and not _jwt_is_expired(self._aura_access_token, leeway_s=60):
             return self._aura_access_token
+
+        if not self._aura_public_key:
+            raise ValueError("aura_public_key is required for Aura username/password login")
 
         if self._aura_refresh_token:
             try:

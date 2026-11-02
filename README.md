@@ -112,6 +112,8 @@ Environment variables win; a secrets file fills the rest:
 | `CIRCLE_ADMIN_TOKEN` | `circle.admin_token` | Optional pre-authenticated token (bypasses login) |
 | `CIRCLE_PROFILE_PID` | `circle.profile_pid` | Optional default profile for usage tools |
 | `CIRCLE_VC_HOST` | `circle.vc_host` | Optional VC API host (`vc.example.com` or a full `https://` URL). Skips the per-circle host lookup |
+| `CIRCLE_AUTH_METHOD` | `circle.auth_method` | `auto` (default), `aura` or `cognito`: which sign-in backend holds the account (see Auth flow) |
+| `CIRCLE_COGNITO_POOL_ID` / `CIRCLE_COGNITO_CLIENT_ID` | `circle.cognito_pool_id` / `circle.cognito_client_id` | Optional overrides of Circle's Cognito user pool and app client |
 
 `CIRCLE_SECRETS_FILE` points at a conf file with `circle.<key> = <value>` lines,
 which keeps credentials out of your MCP client config.
@@ -286,11 +288,23 @@ implements today.
 
 Auth flow:
 
-1. `POST https://api.aurasvc.io/auth/session/signin` with header
-   `Authorization: Public <aura_public_key>` and body `{"alias": <email>, "password": ...}`
-   → `access_token` + `refresh_token` (refresh via `/auth/session/refresh_token`)
+1. Get an identity JWT for the account. Circle has two sign-in backends and an
+   account lives in exactly one of them:
+   - **Cognito** (accounts from before the Aura migration): AWS Cognito
+     `USER_SRP_AUTH` against user pool `us-west-2_TiQsgtChT`, app client
+     `fd7ail96985e3p3omb792ko0f` (no client secret) → `IdToken` + `RefreshToken`.
+     Implemented in `cognito.py` with the stdlib only.
+   - **Aura**: `POST https://api.aurasvc.io/auth/session/signin` with header
+     `Authorization: Public <aura_public_key>` and body `{"alias": <email>, "password": ...}`
+     → `access_token` + `refresh_token` (refresh via `/auth/session/refresh_token`)
+
+   `auth_method=auto` tries Cognito first and falls back to Aura only when the
+   pool reports the user as unknown (which is not a password failure, so the
+   probe cannot lock the account). A Cognito-era account that is sent to Aura
+   gets `401 InvalidCredentials` no matter the password; that symptom means
+   "wrong backend", not "wrong password".
 2. `POST https://auth.meetcircle-blue.co/api/v2/grant/admin` with
-   `{"deviceid": <device_id>, "jwt": <access_token>}` → admin token and `circleid`
+   `{"deviceid": <device_id>, "jwt": <id token or access token>}` → admin token and `circleid`
 3. After each fresh grant, `GET https://register.meetcircle-blue.co/api/v1.0/host?circleid=<id>&token=<admin_token>`;
    a non-empty `host` replaces the default VC host. Any failure keeps the default
    (`vc.meetcircle-blue.co`); `CIRCLE_VC_HOST` skips the lookup.

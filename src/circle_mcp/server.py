@@ -4,7 +4,8 @@ MCP server exposing Circle parental-control data (stdio or streamable HTTP).
 Circle configuration, in order of precedence:
 
 1. Environment variables: CIRCLE_USERNAME, CIRCLE_PASSWORD, CIRCLE_DEVICE_ID,
-   CIRCLE_AURA_PUBLIC_KEY, CIRCLE_ADMIN_TOKEN, CIRCLE_PROFILE_PID, CIRCLE_VC_HOST
+   CIRCLE_AURA_PUBLIC_KEY, CIRCLE_ADMIN_TOKEN, CIRCLE_PROFILE_PID, CIRCLE_VC_HOST,
+   CIRCLE_AUTH_METHOD (auto|aura|cognito), CIRCLE_COGNITO_POOL_ID, CIRCLE_COGNITO_CLIENT_ID
 2. A secrets file with `circle.<key> = <value>` lines (the airstream-dashboard
    secrets.conf format), located via CIRCLE_SECRETS_FILE.
 
@@ -46,7 +47,18 @@ from .tools import godevice as godevice_tools
 
 log = logging.getLogger("circle_mcp")
 
-_SECRET_KEYS = ("username", "password", "device_id", "aura_public_key", "admin_token", "profile_pid", "vc_host")
+_SECRET_KEYS = (
+    "username",
+    "password",
+    "device_id",
+    "aura_public_key",
+    "admin_token",
+    "profile_pid",
+    "vc_host",
+    "auth_method",
+    "cognito_pool_id",
+    "cognito_client_id",
+)
 
 _client = None
 # Sync tools run in worker threads under HTTP; the client's token state is not
@@ -102,6 +114,9 @@ def _circle() -> CircleClient:
             admin_token=cfg.get("admin_token", ""),
             default_profile_pid=cfg.get("profile_pid", ""),
             vc_base_url=cfg.get("vc_host", ""),
+            auth_method=cfg.get("auth_method", "auto"),
+            cognito_pool_id=cfg.get("cognito_pool_id", ""),
+            cognito_client_id=cfg.get("cognito_client_id", ""),
         )
         if not client.is_configured:
             raise RuntimeError(
@@ -113,7 +128,7 @@ def _circle() -> CircleClient:
     if _client.ensure_admin_token() is None:
         raise CircleAuthError(
             "Circle login failed (the API rejected the stored credentials — "
-            "check the circle username/password/aura_public_key)"
+            "check the circle username/password/aura_public_key/auth_method)"
         )
     return _client
 
