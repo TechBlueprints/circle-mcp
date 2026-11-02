@@ -6,3 +6,6 @@ dist/
 
 # Local MCP registration — may embed credentials or machine-specific paths
 .mcp.json
+
+# Clean-room scratch area — never committed
+clean-room/

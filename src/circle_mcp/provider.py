@@ -179,23 +179,45 @@ class CircleClient:
     # VC data endpoints
     # -----------------------------
 
-    def _request(self, path: str) -> Optional[Dict]:
+    def _vc_url(self, path: str, query: Optional[Dict] = None, port: Optional[int] = None) -> str:
+        """Build an admin-API URL. `port` overrides the host's port (e.g. 8995)."""
+        base = self._vc_base
+        if port is not None:
+            parsed = urllib.parse.urlsplit(base)
+            base = f"{parsed.scheme}://{parsed.hostname}:{port}"
+        url = f"{base}{path}"
+        if query:
+            qs = urllib.parse.urlencode({k: str(v) for k, v in query.items() if v is not None})
+            url = f"{url}{'&' if '?' in url else '?'}{qs}"
+        return url
+
+    def _request(
+        self,
+        path: str,
+        method: str = "GET",
+        query: Optional[Dict] = None,
+        body: Optional[Dict] = None,
+        port: Optional[int] = None,
+    ) -> Optional[Dict]:
+        """Admin-API call with the bearer token; re-grants once on 401/403.
+
+        Legacy endpoints are GET with query params (`query`); v2 endpoints take a
+        JSON `body` with POST/PUT/DELETE. Non-JSON responses come back as {"_raw": ...}.
+        """
         token = self.ensure_admin_token()
         if not token:
             return None
 
-        url = f"{self._vc_base}{path}"
-        headers = {"Authorization": f"Bearer {token}"}
+        url = self._vc_url(path, query, port)
         try:
-            return self._http_json(url, headers=headers)
+            return self._http_json(url, method=method, headers={"Authorization": f"Bearer {token}"}, body=body)
         except urllib.error.HTTPError as e:
-            # Retry once on unauthorized with a freshly granted admin token
             if e.code in (401, 403):
                 self._admin_token = ""
                 token = self.ensure_admin_token()
                 if not token:
                     return None
-                return self._http_json(url, headers={"Authorization": f"Bearer {token}"})
+                return self._http_json(url, method=method, headers={"Authorization": f"Bearer {token}"}, body=body)
             raise
 
     def list_profiles(self) -> List[Dict]:
