@@ -61,8 +61,8 @@ API is `api.test.aurasvc.io`. Everything is HTTPS.
 
 **Per-circle VC host override.** Both the parent flow (B.1.4) and the child
 enrollment (C.1) can return a `host` value. When present it replaces the
-default `vc` host for all later calls on that surface. The MCP hard-codes the
-default host today.
+default `vc` host for all later calls on that surface. The MCP does the parent
+lookup after each admin grant (B.1.4).
 
 ## A.2 Request style
 
@@ -170,14 +170,15 @@ The admin JWT payload carries `exp`, `type`, `circleid`, `deviceid`, and
 Aura token first if its `exp` has passed) and retries the request once. The
 MCP behaves the same way.
 
-### B.1.4 VC host discovery ❌
+### B.1.4 VC host discovery ✅
 
 ```
 GET https://register.meetcircle-blue.co/api/v1.0/host?circleid=<id>&token=<admin_token>
 ```
 
 Response: `{"host": "<vc host for this circle>"}`. Stored and used in place
-of the default `vc` host when non-empty. Worth adding to the MCP bootstrap.
+of the default `vc` host when non-empty. The MCP looks it up after each fresh
+grant, keeps the default on any failure, and skips it when `CIRCLE_VC_HOST` is set.
 
 ### B.1.5 Legacy Cognito login (informational)
 
@@ -194,21 +195,22 @@ The `account` host instead takes `Authorization: Bearer <aura access_token>`.
 
 | Endpoint | Params | Returns | MCP |
 |----------|--------|---------|-----|
-| `/api/QUERY/all` | – | Full snapshot: `overall`, `users[]`, `devices[]`, `hardware[]`, `categories[]`, `version` | ❌ |
-| `/api/QUERY/overall` | – | `overall` only (B.7.5) | ❌ |
-| `/api/QUERY/devices` | – | `devices[]` (B.7.4) plus `overall` | ❌ |
-| `/api/QUERY/hardware` | – | `hardware[]` Circle Home units (B.7.6) | ❌ |
-| `/api/QUERY/hardware/hardware/isOnline` | `hardware.cuuid` | Online flag for one unit | ❌ |
-| `/api/QUERY/categories` | – | Filter category catalog (B.7.3) | ❌ |
-| `/api/v2/categories` | – | Newer catalog with `apps[]`, `hidden`, `onrequest`, `enabled` | ❌ |
+| `/api/QUERY/all` | – | Full snapshot: `overall`, `users[]`, `devices[]`, `hardware[]`, `categories[]`, `version` | ✅ `get_circle_snapshot`, `list_profiles`, `get_circle_status` |
+| `/api/QUERY/overall` | – | `overall` only (B.7.5) | ✅ (client only) |
+| `/api/QUERY/devices` | – | `devices[]` (B.7.4) plus `overall` | ✅ `list_devices` |
+| `/api/QUERY/hardware` | – | `hardware[]` Circle Home units (B.7.6) | ✅ `list_hardware` |
+| `/api/QUERY/hardware/hardware/isOnline` | `hardware.cuuid` | Online flag for one unit | ✅ `list_hardware(check_online)` |
+| `/api/QUERY/categories` | – | Filter category catalog (B.7.3) | ✅ `list_categories` |
+| `/api/v2/categories` | – | Newer catalog with `apps[]`, `hidden`, `onrequest`, `enabled` | ✅ `list_categories` (names) |
 | `/api/QUERY/users/user/photo` | `user.pid` | Profile avatar | ❌ |
-| `/api/v2/profiles/badges` | – | `[{pid, badges[]}]` | ❌ |
-| `/api/v0.1/c/devStatus` (sent to **port 8995**) | `gotoken=<admin_token>` | Managed child devices: `{authStatus, totalDeviceCount, enabledDeviceCount, devices:[{deviceid, circleid, state, last}]}` | ❌ |
-| `/api/QUERY/users` | – | ⚠️ MCP `list_profiles`; returns `users[]`. The app reads `users` from `/api/QUERY/all` instead. | ⚠️ |
-| `/api/QUERY/circleinfo` | – | ⚠️ MCP `get_circle_status`; not in the app | ⚠️ |
+| `/api/v2/profiles/badges` | – | `[{pid, badges[]}]` | ✅ `get_profile_badges` |
+| `/api/v0.1/c/devStatus` (sent to **port 8995**) | `gotoken=<admin_token>` | Managed child devices: `{authStatus, totalDeviceCount, enabledDeviceCount, devices:[{deviceid, circleid, state, last}]}` | ✅ `list_go_devices` |
+| `/api/QUERY/users` | – | `users[]`. Fallback for `list_profiles` when `/api/QUERY/all` fails; the app reads `users` from `/api/QUERY/all`. | ⚠️ |
+| `/api/QUERY/circleinfo` | – | Fallback for `get_circle_status` when `/api/QUERY/all` fails; not in the app | ⚠️ |
 
-Recommendation: back `list_profiles` and `get_circle_status` with
-`/api/QUERY/all`, keeping the current endpoints as a verified fallback.
+`list_profiles` and `get_circle_status` read `/api/QUERY/all` first and fall
+back to the older endpoints. `/api/QUERY/users/user/photo` is not implemented;
+profiles carry `avatarUrl` when the snapshot has one.
 
 ## B.3 Read: usage and history
 

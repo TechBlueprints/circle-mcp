@@ -12,16 +12,28 @@ the `mcp` SDK.
 
 | Tool | Purpose |
 |------|---------|
-| `list_profiles` | Family profiles (pid, name, type) |
+| `list_profiles` | Family profiles (pid, name, mode, ageCategory, role, avatarUrl) |
 | `get_usage` | Detailed usage for a profile (`day`=days ago, `ndays`=span) |
 | `get_usage_categories` | Usage by category (games, social, video, ...) |
-| `get_circle_status` | Circle device/account status |
+| `get_circle_status` | Circle-wide status (name, mode, enabled, timezone, firmware) |
+| `get_circle_snapshot` | Everything in one call; `section` = `overall`, `users`, `devices`, `hardware` or `categories` for one part. Hotspot passwords are removed |
+| `list_devices` | Devices on the network (uid/MAC, names, ip, maker, mode, assigned pid, `isGo`) |
+| `list_hardware` | Circle Home units (cuuid, model, online/enabled, network, Wi-Fi, firmware); `check_online=true` adds a live online check per unit |
+| `list_categories` | Filter category catalog (id, name, mainCategory, description), to name the ids in usage reports |
+| `list_go_devices` | Child phones/tablets running the Circle app: counts plus each device's id, state, last check-in |
+| `get_profile_badges` | Badges the Circle app shows per profile, `[{pid, badges}]` |
 
 ## Setup
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e .
+```
+
+Tests (stubbed HTTP, no credentials needed):
+
+```bash
+.venv/bin/pip install -e '.[dev]' && .venv/bin/python -m pytest
 ```
 
 ## Configuration
@@ -36,6 +48,7 @@ Environment variables win; a secrets file fills the rest:
 | `CIRCLE_AURA_PUBLIC_KEY` | `circle.aura_public_key` | Aura API client key (`circle_mobile_auth:...`) |
 | `CIRCLE_ADMIN_TOKEN` | `circle.admin_token` | Optional pre-authenticated token (bypasses login) |
 | `CIRCLE_PROFILE_PID` | `circle.profile_pid` | Optional default profile for usage tools |
+| `CIRCLE_VC_HOST` | `circle.vc_host` | Optional VC API host (`vc.example.com` or a full `https://` URL). Skips the per-circle host lookup |
 
 `CIRCLE_SECRETS_FILE` points at a conf file with `circle.<key> = <value>` lines,
 which keeps credentials out of your MCP client config.
@@ -184,11 +197,18 @@ Auth flow:
    `Authorization: Public <aura_public_key>` and body `{"alias": <email>, "password": ...}`
    → `access_token` + `refresh_token` (refresh via `/auth/session/refresh_token`)
 2. `POST https://auth.meetcircle-blue.co/api/v2/grant/admin` with
-   `{"deviceid": <device_id>, "jwt": <access_token>}` → admin token
-3. Data endpoints on `https://vc.meetcircle-blue.co` with `Authorization: Bearer <admin_token>`:
+   `{"deviceid": <device_id>, "jwt": <access_token>}` → admin token and `circleid`
+3. After each fresh grant, `GET https://register.meetcircle-blue.co/api/v1.0/host?circleid=<id>&token=<admin_token>`;
+   a non-empty `host` replaces the default VC host. Any failure keeps the default
+   (`vc.meetcircle-blue.co`); `CIRCLE_VC_HOST` skips the lookup.
+4. Data endpoints on the VC host with `Authorization: Bearer <admin_token>`:
    - `/api/LOGS/usage/categories?user=<pid>&day=<d>&ndays=<n>` (verified live)
    - `/api/LOGS/usage?user=<pid>&day=<d>&ndays=<n>`
-   - `/api/QUERY/users`, `/api/QUERY/circleinfo` (unverified)
+   - `/api/QUERY/all` (profiles and status), `/api/QUERY/devices`, `/api/QUERY/hardware`,
+     `/api/QUERY/hardware/hardware/isOnline`, `/api/QUERY/categories`, `/api/v2/categories`,
+     `/api/v2/profiles/badges`
+   - `/api/QUERY/users`, `/api/QUERY/circleinfo`: fallbacks when `/api/QUERY/all` fails
+   - `/api/v0.1/c/devStatus?gotoken=<admin_token>` on port **8995** of the same host
 
 Error semantics on signin:
 

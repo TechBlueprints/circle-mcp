@@ -4,7 +4,7 @@ MCP server exposing Circle parental-control data (stdio or streamable HTTP).
 Circle configuration, in order of precedence:
 
 1. Environment variables: CIRCLE_USERNAME, CIRCLE_PASSWORD, CIRCLE_DEVICE_ID,
-   CIRCLE_AURA_PUBLIC_KEY, CIRCLE_ADMIN_TOKEN, CIRCLE_PROFILE_PID
+   CIRCLE_AURA_PUBLIC_KEY, CIRCLE_ADMIN_TOKEN, CIRCLE_PROFILE_PID, CIRCLE_VC_HOST
 2. A secrets file with `circle.<key> = <value>` lines (the airstream-dashboard
    secrets.conf format), located via CIRCLE_SECRETS_FILE.
 
@@ -37,10 +37,11 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from .provider import CircleAuthError, CircleClient
+from .tools import state as state_tools
 
 log = logging.getLogger("circle_mcp")
 
-_SECRET_KEYS = ("username", "password", "device_id", "aura_public_key", "admin_token", "profile_pid")
+_SECRET_KEYS = ("username", "password", "device_id", "aura_public_key", "admin_token", "profile_pid", "vc_host")
 
 _client = None
 # Sync tools run in worker threads under HTTP; the client's token state is not
@@ -95,6 +96,7 @@ def _circle() -> CircleClient:
             aura_public_key=cfg.get("aura_public_key", ""),
             admin_token=cfg.get("admin_token", ""),
             default_profile_pid=cfg.get("profile_pid", ""),
+            vc_base_url=cfg.get("vc_host", ""),
         )
         if not client.is_configured:
             raise RuntimeError(
@@ -148,7 +150,7 @@ server = MCPServer(
 
 @server.tool()
 def list_profiles() -> list:
-    """List Circle family profiles (pid, name, type). Use the pid with the usage tools."""
+    """List Circle family profiles (pid, name, mode, ageCategory, role). Use the pid with the usage tools."""
     return _call("list_profiles")
 
 
@@ -180,9 +182,12 @@ def get_usage_categories(
 
 @server.tool()
 def get_circle_status() -> dict:
-    """Get Circle device/account status."""
+    """Get circle-wide status: name, mode (Filter/Pause), enabled, timezone, firmware version."""
     result = _call("get_circle_status")
     return result if result is not None else {"error": "Failed to fetch Circle status"}
+
+
+state_tools.register(server, _call, _lock)
 
 
 # -----------------------------

@@ -23,14 +23,16 @@ import time
 import urllib.parse
 import urllib.request
 import urllib.error
-from typing import Optional, Dict, List
+from typing import Optional, Dict
+
+from .api.state import StateMixin, base_url
 
 
 class CircleAuthError(RuntimeError):
     """Sign-in or token grant rejected by the Circle/Aura API."""
 
 
-class CircleClient:
+class CircleClient(StateMixin):
     """Read-only client for Circle parental controls."""
 
     DEFAULT_AURA_BASE = "https://api.aurasvc.io"
@@ -59,7 +61,9 @@ class CircleClient:
         self._default_profile_pid = default_profile_pid
         self._aura_base = (aura_base_url or self.DEFAULT_AURA_BASE).rstrip("/")
         self._auth_base = (auth_base_url or self.DEFAULT_AUTH_BASE).rstrip("/")
-        self._vc_base = (vc_base_url or self.DEFAULT_VC_BASE).rstrip("/")
+        self._vc_base = base_url(vc_base_url) if vc_base_url else self.DEFAULT_VC_BASE
+        # An explicit VC host (CIRCLE_VC_HOST) skips per-circle host discovery.
+        self._vc_pinned = bool(vc_base_url)
         self._user_agent = user_agent
         self._timeout_s = timeout_s
 
@@ -132,8 +136,10 @@ class CircleClient:
             detail = e.read().decode("utf-8", errors="replace")[:200]
             raise CircleAuthError(f"Admin token grant failed: HTTP {e.code} {detail}") from e
         admin_token = (result.get("token") or result.get("access-token") or "").strip()
-        self._circle_id = result.get("circleId")
+        self._circle_id = result.get("circleid") or result.get("circleId")
         self._admin_token = admin_token
+        if admin_token:
+            self._discover_vc_host()
         return admin_token or None
 
     def _ensure_aura_access_token(self) -> Optional[str]:
@@ -220,28 +226,6 @@ class CircleClient:
                 return self._http_json(url, method=method, headers={"Authorization": f"Bearer {token}"}, body=body)
             raise
 
-    def list_profiles(self) -> List[Dict]:
-        """List Circle profiles (pid, name, type)."""
-        result = self._request("/api/QUERY/users")
-        if not result:
-            return []
-
-        users = result.get("users") if isinstance(result, dict) else result
-        if not isinstance(users, list):
-            return []
-
-        profiles = []
-        for profile in users:
-            if not isinstance(profile, dict):
-                continue
-            profiles.append({
-                "pid": profile.get("pid") or profile.get("id"),
-                "name": profile.get("name"),
-                "type": profile.get("type") or profile.get("mode"),
-                "avatarUrl": profile.get("avatarUrl") or profile.get("photo"),
-            })
-        return profiles
-
     def get_usage_categories(
         self,
         profile_pid: Optional[str] = None,
@@ -271,10 +255,6 @@ class CircleClient:
         qs = urllib.parse.urlencode({"user": str(pid), "day": str(day), "ndays": str(ndays)})
         result = self._request(f"/api/LOGS/usage?{qs}")
         return result if result else {"error": "Failed to fetch usage data"}
-
-    def get_circle_status(self) -> Optional[Dict]:
-        """Circle device/account status."""
-        return self._request("/api/QUERY/circleinfo")
 
 
 def _jwt_is_expired(token: str, leeway_s: int = 0) -> bool:
