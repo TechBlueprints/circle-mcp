@@ -16,6 +16,15 @@ the `mcp` SDK.
 | `get_usage` | Detailed usage for a profile (`day`=days ago, `ndays`=span) |
 | `get_usage_categories` | Usage by category (games, social, video, ...) |
 | `get_circle_status` | Circle device/account status |
+| `go_device_status` | Enrolled Circle Go child device: stage, ids, last ping, managed flag ([Child-device mode](#child-device-mode)) |
+| `go_enroll_start` ✍️ | Announce a new child device and request a pairing passcode |
+| `go_enroll_approve` ✍️ | Approve the pending device from the parent account |
+| `go_enroll_finish` ✍️ | Claim the device token and describe the device (home Wi-Fi) |
+| `go_ping` ✍️ | Check in as the device; reports whether the parent still manages it |
+| `go_download_settings` ✍️ | Download and unpack the device's rule bundle |
+| `go_probe_user_info` ✍️ | Probe the four undocumented user-info endpoints (status + body each) |
+
+✍️ = registered only when `CIRCLE_MCP_ALLOW_WRITES` is truthy (`1`, `true`, `yes`, `on`).
 
 ## Setup
 
@@ -23,6 +32,8 @@ the `mcp` SDK.
 python3 -m venv .venv
 .venv/bin/pip install -e .
 ```
+
+Tests: `.venv/bin/pip install -e '.[dev]'` then `.venv/bin/python -m pytest`.
 
 ## Configuration
 
@@ -85,6 +96,36 @@ Client registration (Claude Code `.mcp.json` or any streamable-HTTP client):
 {"type": "http", "url": "http://myhost.example:3005/mcp",
  "headers": {"Authorization": "Bearer <key>"}}
 ```
+
+## Child-device mode
+
+Besides the parent API, Circle has a separate API for managed phones and tablets
+running the Circle app in Kid mode ("Circle Go", [PROTOCOL.md](PROTOCOL.md) Part C).
+The `go_*` tools let this server enroll itself as such a device. That creates a
+real device in the parent's Circle, so everything except `go_device_status` needs
+`CIRCLE_MCP_ALLOW_WRITES`.
+
+Enrollment:
+
+1. `go_enroll_start(device_name)` announces the device and asks for a pairing passcode.
+2. The parent approves it: `go_enroll_approve` does it with the parent account this
+   server is configured for, or the parent types the passcode into their Circle app.
+3. `go_enroll_finish(home_ssid)` collects the device token and registers the device's
+   home Wi-Fi name. `go_device_status` should then show `stage: enrolled`.
+
+After that, `go_ping` checks in (`managed: false` means the parent removed the device),
+`go_download_settings` fetches the rule bundle (three opaque binaries for Circle's filter
+engine, not readable rules), and `go_probe_user_info` reports what the four declared but
+unused user-info endpoints return. The device token renews itself on a 401; if the
+renewal says management was turned off, device calls stop and the status says `unmanaged`.
+Run `go_enroll_start` with `replace=true` to start over.
+
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `CIRCLE_GO_STATE_FILE` | `~/.circle-mcp/go-device.json` | Device identity and tokens (written mode 0600; keep it private) |
+| `CIRCLE_GO_SETTINGS_DIR` | `go-settings/` next to the state file | Where `go_download_settings` writes the bundle |
+
+In a container, mount a writable volume for the state file, or the enrollment is lost on restart.
 
 ## Deployment runbook
 
