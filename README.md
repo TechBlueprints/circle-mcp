@@ -17,6 +17,27 @@ the `mcp` SDK.
 | `get_usage_categories` | Usage by category (games, social, video, ...) |
 | `get_circle_status` | Circle device/account status |
 
+### Profile writes (need `CIRCLE_MCP_ALLOW_WRITES`)
+
+These change the Circle and are only registered when `CIRCLE_MCP_ALLOW_WRITES`
+is `1`/`true`/`yes`/`on`; with it unset the server stays read-only. Each returns
+the raw Circle response as `response` plus an `ok` flag.
+
+| Tool | Purpose |
+|------|---------|
+| `pause_profile` / `resume_profile` | Pause a profile's internet / go back to normal filtering |
+| `create_profile` | New profile (`name`, `age_category`, `mode`); returns its `pid` |
+| `rename_profile` | Change a profile's name |
+| `set_profile_age_category` | `Pre-K`, `Kid`, `Teen`, `Adult` or `None` |
+| `set_profile_toggles` | Turn time limits and/or off times `On`/`Off` |
+| `delete_profile` | Delete a profile; needs `confirm=true`, refuses the built-in `0` (Home) and `1` (Unmanaged) |
+| `assign_device_to_profile` | Move a device (by MAC) onto a profile |
+| `set_category_switches` | Per-category `On`/`Off`/`Unmanaged` overrides; merged into the current set unless `replace=true` |
+| `set_platform_switches` | Same for platforms (apps); merged unless `replace=true` |
+| `remove_platform_switch` | Drop one platform override |
+| `set_custom_site` | Always allow (`On`) or block (`Off`) a site; other custom sites are kept |
+| `remove_custom_site` | Drop a site from the custom list |
+
 ## Setup
 
 ```bash
