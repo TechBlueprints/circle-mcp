@@ -33,12 +33,14 @@ from .api.profiles import ProfilesMixin
 
 from .api.schedules import SchedulesMixin
 
+from .api.devices import DevicesMixin
+
 
 class CircleAuthError(RuntimeError):
     """Sign-in or token grant rejected by the Circle/Aura API."""
 
 
-class CircleClient(StateMixin, UsageMixin, ProfilesMixin, SchedulesMixin):
+class CircleClient(StateMixin, UsageMixin, ProfilesMixin, SchedulesMixin, DevicesMixin):
     """Read-only client for Circle parental controls."""
 
     DEFAULT_AURA_BASE = "https://api.aurasvc.io"

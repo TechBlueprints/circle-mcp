@@ -58,6 +58,24 @@ the raw Circle response as `response` plus an `ok` flag.
 ✏️ = changes settings on the Circle; registered only when `CIRCLE_MCP_ALLOW_WRITES`
 is `1`/`true`/`yes`/`on`. Days are weekday names or indices with Sunday = 0;
 times are 24-hour `HH:mm`.
+| `get_subscription_status` | Subscription plan, expiry, renewal and trial flags (needs username/password, not just an admin token) |
+| `lookup_domain_category` | Circle category id(s) for a domain or URL |
+Write tools register only when `CIRCLE_MCP_ALLOW_WRITES` is `1`/`true`/`yes`/`on`. Each returns
+`{"ok": bool, "response": <Circle's reply>}`.
+| Write tool | Purpose |
+|------------|---------|
+| `rename_device` | Rename a device (`mac` = its uid) |
+| `pause_device` / `resume_device` | Cut / restore one device's internet |
+| `forget_device` | Remove a device from Circle (needs `confirm=true`) |
+| `pause_home` / `resume_home` | Pause / resume the internet for the whole home |
+| `set_circle_timezone` | Circle's time zone (IANA id, validated) |
+| `set_circle_locale` | Circle's language (`en`, `es`, ...) |
+| `set_default_profile` | Profile newly seen devices land in |
+| `dismiss_notification` | Clear an active dashboard notification |
+| `set_hardware_enabled` | Enable / disable a Circle Home unit (`cuuid`) |
+| `set_hardware_compatible_mode` | Toggle a Circle Home unit's compatible mode |
+| `reboot_hardware` | Reboot a Circle Home unit (needs `confirm=true`) |
+| `request_child_location` | Ask a child's phone to report its location; the answer goes to the parent app by push |
 
 ## Setup
 

@@ -41,6 +41,7 @@ from .tools import state as state_tools
 from .tools import usage as usage_tools
 from .tools import profiles as profile_tools
 from .tools import schedules as schedules_tools
+from .tools import devices as devices_tools
 
 log = logging.getLogger("circle_mcp")
 
@@ -194,6 +195,7 @@ state_tools.register(server, _call, _lock)
 usage_tools.register(server, _call, _lock)
 profile_tools.register(server, _circle, _lock)
 schedules_tools.register(server, _call, _lock)
+devices_tools.register(server, _call, _lock)
 
 
 # -----------------------------
