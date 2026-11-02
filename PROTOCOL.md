@@ -88,8 +88,10 @@ child device has been unmanaged, so treat `403` as "retry later / re-auth".
 
 ## A.4 Values
 
-- `day` is **days ago** (`0` = today, `1` = yesterday); `ndays` counts days
-  backward from there.
+- `day` is **days ago** (`0` = today, `1` = yesterday) and is where the window
+  *starts*; `ndays` counts **forward** from it (verified live: `day=6, ndays=7`
+  reports `start` = six days ago and covers through today; `day=0, ndays=7` is
+  just today).
 - Legacy `days` parameters are weekday indices concatenated with no
   separator, Sunday = `0` … Saturday = `6` (`12345` = weekdays).
 - v2 JSON bodies use full English day names: `"Monday"`, `"Tuesday"`, …
@@ -212,7 +214,7 @@ The `account` host instead takes `Authorization: Bearer <aura access_token>`.
 |----------|--------|---------|-----|
 | `/api/QUERY/all` | – | Full snapshot: `overall`, `users[]`, `devices[]`, `hardware[]`, `categories[]`, `version` | ✅ `get_circle_snapshot`, `list_profiles`, `get_circle_status` |
 | `/api/QUERY/overall` | – | `overall` only (B.7.5) | ✅ (client only) |
-| `/api/QUERY/devices` | – | `devices[]` (B.7.4) plus `overall` | ✅ `list_devices` |
+| `/api/QUERY/devices` | – | `devices[]` (B.7.4) plus `overall`. Devices carry no owner; the owner is `users[].relatedDevices[].uid` in `/api/QUERY/all` (every device is listed under exactly one profile, unassigned ones under pid 1 "Unmanaged Devices") | ✅ `list_devices` (joins the owner; filter by pid or name) |
 | `/api/QUERY/hardware` | – | `hardware[]` Circle Home units (B.7.6) | ✅ `list_hardware` |
 | `/api/QUERY/hardware/hardware/isOnline` | `hardware.cuuid` | Online flag for one unit | ✅ `list_hardware(check_online)` |
 | `/api/QUERY/categories` | – | Filter category catalog (B.7.3) | ✅ `list_categories` |
@@ -233,7 +235,7 @@ profiles carry `avatarUrl` when the snapshot has one.
 |----------|--------|---------|-----|
 | `/api/LOGS/usage/categories` | `user`, `day`, `ndays` | `report[]`, each with `data` = category id → minutes (B.7.7). MCP `get_usage_categories` adds `categoryNames` | ✅ |
 | `/api/LOGS/usage/sites` | `user`, `day`, `ndays` | Per-site usage (declared by the app, never called; shape unverified). MCP `get_usage_by_site`, passed through raw | ✅ |
-| `/api/LOGS/usage` | `user`, `day`, `ndays` | ⚠️ MCP `get_usage`; not in the app | ⚠️ |
+| `/api/LOGS/usage` | – | ❌ Does not exist (404 live). MCP `get_usage` is instead a summary built from the two reports above, with category names, minutes and hours, selectable by profile name | – |
 | `/api/LOGS/history/{type}` | path `type` ∈ `allowed`, `blocked`; query `user`, `day`, `time`, `maxrecords`, `withcat` | Browsing history (B.7.8). The app sends `time=23:59`, `maxrecords=200`, `withcat=1`. MCP `get_history` flattens `report[].data[].sites[]` | ✅ |
 
 **Time remaining for a profile** is not a single endpoint on either surface.

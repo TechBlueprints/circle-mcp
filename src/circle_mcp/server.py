@@ -189,14 +189,19 @@ def list_profiles() -> list:
 
 @server.tool()
 def get_usage(profile_pid: Optional[str] = None, day: str = "0", ndays: str = "1") -> dict:
-    """Get detailed internet usage for a profile.
+    """Get a profile's internet usage summary: minutes and hours by category (e.g. Minecraft,
+    Roblox, YouTube, Discord) and by site, plus the deduplicated total.
+
+    Answers questions like "how long did Lucien play Minecraft today": categories are
+    listed by name with minutes and hours. Category minutes overlap (an app and its
+    parent category both count the same traffic); totalMinutes does not.
 
     Args:
-        profile_pid: Profile ID from list_profiles (falls back to configured profile_pid)
-        day: Days ago to start (0 = today)
-        ndays: Number of days to include
+        profile_pid: Profile pid or profile name (e.g. "Lucien"); falls back to configured profile_pid
+        day: Days ago the window starts (0 = today, 1 = yesterday)
+        ndays: Days in the window, counted forward from `day` (today: day=0, ndays=1; last 7 days: day=6, ndays=7)
     """
-    return _call("get_profile_usage", profile_pid=profile_pid, day=day, ndays=ndays)
+    return _call("get_usage_summary", profile_pid=profile_pid, day=day, ndays=ndays)
 
 
 @server.tool()
@@ -207,8 +212,8 @@ def get_usage_categories(
 
     Args:
         profile_pid: Profile ID from list_profiles (falls back to configured profile_pid)
-        day: Days ago to start (0 = today)
-        ndays: Number of days to include
+        day: Days ago the window starts (0 = today)
+        ndays: Days in the window, counted forward from `day` (last 7 days: day=6, ndays=7)
     """
     return _call("get_usage_categories", profile_pid=profile_pid, day=day, ndays=ndays)
 

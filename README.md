@@ -13,11 +13,11 @@ the `mcp` SDK.
 | Tool | Purpose |
 |------|---------|
 | `list_profiles` | Family profiles (pid, name, mode, ageCategory, role, avatarUrl) |
-| `get_usage` | Detailed usage for a profile (`day`=days ago, `ndays`=span) |
+| `get_usage` | Usage summary for a profile (by pid or name): minutes/hours by category (Minecraft, Roblox, YouTube, ...) and by site, plus the deduplicated total. `day` = days ago the window starts, `ndays` counts forward (last week: `day=6, ndays=7`) |
 | `get_usage_categories` | Usage by category (games, social, video, ...) |
 | `get_circle_status` | Circle-wide status (name, mode, enabled, timezone, firmware) |
 | `get_circle_snapshot` | Everything in one call; `section` = `overall`, `users`, `devices`, `hardware` or `categories` for one part. Hotspot passwords are removed |
-| `list_devices` | Devices on the network (uid/MAC, names, ip, maker, mode, assigned pid, `isGo`) |
+| `list_devices` | Devices on the network with their owner (`profilePid`/`profileName` joined from the profiles' `relatedDevices`); optional filter by pid or profile name |
 | `list_hardware` | Circle Home units (cuuid, model, online/enabled, network, Wi-Fi, firmware); `check_online=true` adds a live online check per unit |
 | `list_categories` | Filter category catalog (id, name, mainCategory, description), to name the ids in usage reports |
 | `list_go_devices` | Child phones/tablets running the Circle app: counts plus each device's id, state, last check-in |

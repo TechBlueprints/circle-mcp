@@ -219,8 +219,50 @@ class StateMixin:
             return result["overall"]
         return result
 
-    def list_devices(self) -> List[Dict]:
-        return [normalize_device(d) for d in _items(self._request("/api/QUERY/devices"), "devices")]
+    def list_devices(self, profile_pid: Optional[str] = None) -> List[Dict]:
+        """Devices with their owner profile (`profilePid`, `profileName`), optionally only one profile's.
+
+        Circle keeps the assignment on the profile side (`users[].relatedDevices`),
+        so this reads QUERY/all once and joins; `profile_pid` may be a pid or a
+        profile name (case-insensitive). Without a usable snapshot it falls back
+        to `/api/QUERY/devices`, where only a device-side `pid` field (if any) is known.
+        """
+        snapshot = self._snapshot_section_all()
+        devices = snapshot.get("devices") if isinstance(snapshot, dict) else None
+        if not isinstance(devices, list):
+            devices = _items(self._request("/api/QUERY/devices"), "devices")
+        owners = {}
+        for user in (snapshot.get("users") if isinstance(snapshot, dict) else None) or []:
+            if not isinstance(user, dict) or user.get("pid") is None:
+                continue
+            for related in user.get("relatedDevices") or []:
+                uid = related.get("uid") if isinstance(related, dict) else None
+                if uid:
+                    owners[str(uid)] = (str(user["pid"]), user.get("name"))
+
+        wanted = str(profile_pid).strip().lower() if profile_pid not in (None, "") else None
+        entries = []
+        for raw in devices:
+            if not isinstance(raw, dict):
+                continue
+            entry = normalize_device(raw)
+            pid, name = owners.get(str(entry.get("uid")), (None, None))
+            if pid is None and entry.get("pid") is not None:
+                pid = str(entry["pid"])
+            entry["profilePid"] = pid
+            entry["profileName"] = name
+            if wanted is not None and wanted not in {str(pid).lower(), str(name or "").lower()}:
+                continue
+            entries.append(entry)
+        return entries
+
+    def _snapshot_section_all(self) -> Optional[Dict]:
+        """The whole QUERY/all result, or None when the call fails."""
+        try:
+            result = self._request("/api/QUERY/all")
+        except OSError:
+            return None
+        return result if isinstance(result, dict) else None
 
     def list_hardware(self) -> List[Dict]:
         return [normalize_hardware(h) for h in _items(self._request("/api/QUERY/hardware"), "hardware")]

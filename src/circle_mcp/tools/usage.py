@@ -18,8 +18,8 @@ def register(server, circle, lock) -> None:
 
         Args:
             profile_pid: Profile ID from list_profiles (falls back to configured profile_pid)
-            day: Days ago to start (0 = today)
-            ndays: Number of days to include
+            day: Days ago the window starts (0 = today)
+            ndays: Days in the window, counted forward from `day` (last 7 days: day=6, ndays=7)
         """
         return circle("get_usage_sites", profile_pid=profile_pid, day=day, ndays=ndays)
 

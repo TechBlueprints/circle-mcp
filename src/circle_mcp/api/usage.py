@@ -99,6 +99,72 @@ class UsageMixin:
         result = self._request("/api/LOGS/usage/sites", query={"user": pid, "day": day, "ndays": ndays})
         return result if result else {"error": "Failed to fetch site usage"}
 
+    def resolve_profile(self, profile) -> Dict:
+        """{"pid", "name"} for a pid or a profile name (case-insensitive); unknown names raise."""
+        text = str(profile).strip()
+        users = self._snapshot_section("users") if hasattr(self, "_snapshot_section") else None
+        for user in users or []:
+            if not isinstance(user, dict) or user.get("pid") is None:
+                continue
+            name = str(user.get("name") or "")
+            if str(user["pid"]) == text or name.lower() == text.lower():
+                return {"pid": str(user["pid"]), "name": name or None}
+        if text.isdigit():
+            return {"pid": text, "name": None}
+        raise ValueError(f"no profile named {profile!r}; use list_profiles")
+
+    def get_usage_summary(self, profile_pid: Optional[str] = None, day: str = "0", ndays: str = "1") -> Dict:
+        """Minutes by category and by site over a window, with names and hours.
+
+        The window runs forward from `day` days ago for `ndays` days, so
+        day=0/ndays=1 is today and day=6/ndays=7 is the last week. Category
+        minutes overlap (an app category and its parent both count the same
+        traffic); `totalMinutes` is Circle's deduplicated total.
+        """
+        profile = self.resolve_profile(profile_pid or self._default_profile_pid or "")
+        pid = profile["pid"]
+        categories = self.get_usage_categories(profile_pid=pid, day=day, ndays=ndays) or {}
+        report = (_list_under(categories, "report") or [None])[0]
+        data = report.get("data") if isinstance(report, dict) else None
+        names = categories.get("categoryNames") if isinstance(categories, dict) else None
+        rows = []
+        total = 0
+        for cid, minutes in (data or {}).items():
+            minutes = _minutes(minutes)
+            if str(cid) == TOTAL_CATEGORY:
+                total = minutes
+                continue
+            rows.append({"id": str(cid), "name": (names or {}).get(str(cid)), "minutes": minutes, "hours": _hours(minutes)})
+        rows.sort(key=lambda r: (-r["minutes"], r["name"] or ""))
+
+        sites = []
+        try:
+            site_report = (_list_under(self.get_usage_sites(profile_pid=pid, day=day, ndays=ndays), "report") or [None])[0]
+        except (OSError, ValueError):
+            site_report = None
+        site_data = site_report.get("data") if isinstance(site_report, dict) else None
+        for site, minutes in ((site_data or {}).get("all") or {}).items():
+            minutes = _minutes(minutes)
+            sites.append({"site": site, "minutes": minutes, "hours": _hours(minutes)})
+        sites.sort(key=lambda r: (-r["minutes"], r["site"]))
+
+        from_days = _int_or(day, 0)
+        span = max(_int_or(ndays, 1), 1)
+        return {
+            "profile": profile,
+            "window": {
+                "start": report.get("start") if isinstance(report, dict) else None,
+                "days": span,
+                "fromDaysAgo": from_days,
+                "toDaysAgo": max(from_days - span + 1, 0),
+            },
+            "totalMinutes": total,
+            "totalHours": _hours(total),
+            "categories": rows,
+            "sites": sites,
+            "note": "Category minutes overlap (an app and its parent category both count); totalMinutes is deduplicated.",
+        }
+
     def get_history(
         self,
         profile_pid: Optional[str] = None,
@@ -266,6 +332,25 @@ def flatten_history(result) -> List[Dict]:
                 entry.setdefault("uid", uid)
                 entries.append(entry)
     return entries
+
+
+def _minutes(value) -> int:
+    """Circle reports minutes as zero-padded strings ("00025")."""
+    try:
+        return int(str(value).strip() or 0)
+    except ValueError:
+        return 0
+
+
+def _hours(minutes: int) -> float:
+    return round(minutes / 60, 2)
+
+
+def _int_or(value, default: int) -> int:
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
 
 
 def _list_under(result, key: str) -> Optional[List]:

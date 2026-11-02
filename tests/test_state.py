@@ -157,8 +157,41 @@ def test_list_devices(tool_client):
     }})
     assert tool_json(run_tool("list_devices"), many=True) == [
         {"uid": "aa:bb", "displayName": "iPad", "ip": "10.0.0.5", "isGo": False, "newlyAdded": True,
-         "rank": 3, "pid": "12"},
+         "rank": 3, "pid": "12", "profilePid": "12", "profileName": None},
     ]
+
+
+OWNED_SNAPSHOT = {
+    "overall": {},
+    "users": [
+        {"pid": 0, "name": "Home", "relatedDevices": []},
+        {"pid": "2", "name": "Lucien", "relatedDevices": [{"uid": "aa:01"}, {"uid": "aa:02"}]},
+        {"pid": "3", "name": "Emilie", "relatedDevices": [{"uid": "aa:03"}]},
+    ],
+    "devices": [
+        {"uid": "aa:01", "displayName": "lucien-ws"},
+        {"uid": "aa:02", "displayName": "Luciens-Air"},
+        {"uid": "aa:03", "displayName": "emiliews"},
+        {"uid": "aa:04", "displayName": "orphan"},
+    ],
+}
+
+
+def test_list_devices_joins_owner_from_profiles(tool_client):
+    client = tool_client({"/api/QUERY/all": OWNED_SNAPSHOT})
+    devices = tool_json(run_tool("list_devices"), many=True)
+    assert [(d["displayName"], d["profilePid"], d["profileName"]) for d in devices] == [
+        ("lucien-ws", "2", "Lucien"), ("Luciens-Air", "2", "Lucien"), ("emiliews", "3", "Emilie"),
+        ("orphan", None, None),
+    ]
+    assert not client._http_json.urls("/api/QUERY/devices")  # one QUERY/all call does it
+
+
+@pytest.mark.parametrize("selector", ["2", "lucien", "Lucien"])
+def test_list_devices_filters_by_pid_or_name(tool_client, selector):
+    tool_client({"/api/QUERY/all": OWNED_SNAPSHOT})
+    devices = tool_json(run_tool("list_devices", {"profile_pid": selector}), many=True)
+    assert [d["displayName"] for d in devices] == ["lucien-ws", "Luciens-Air"]
 
 
 def test_list_hardware_with_live_online(tool_client):

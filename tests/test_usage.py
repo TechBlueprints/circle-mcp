@@ -91,6 +91,71 @@ def test_usage_sites_passes_query():
 
 
 # -----------------------------
+# Usage summary
+# -----------------------------
+
+SUMMARY_SNAPSHOT = {"users": [{"pid": "7", "name": "Lucien"}, {"pid": "8", "name": "Emilie"}]}
+SUMMARY_CATEGORIES = {"categories": [
+    {"id": "71", "name": "Minecraft"}, {"id": "13", "name": "Online Games"}, {"id": "65", "name": "YouTube"},
+]}
+SUMMARY_USAGE = {"result": "success", "report": [{
+    "user": "7", "type": "usage", "ndays": "1", "subtype": "categories", "start": "11-2-2026",
+    "data": {"71": "00090", "13": "00090", "65": "00025", "T": "00115"},
+}]}
+SUMMARY_SITES = {"result": "success", "report": [{
+    "subtype": "sites", "start": "11-2-2026",
+    "data": {"71": {"minecraft.net": "00090"}, "all": {"minecraft.net": "00090", "youtube.com": "00025"}},
+}]}
+
+
+def summary_client():
+    return make_client({
+        "/api/QUERY/all": SUMMARY_SNAPSHOT,
+        "/api/QUERY/categories": SUMMARY_CATEGORIES,
+        "/api/LOGS/usage/categories": SUMMARY_USAGE,
+        "/api/LOGS/usage/sites": SUMMARY_SITES,
+    })
+
+
+def test_usage_summary_names_minutes_and_hours():
+    client, stub = summary_client()
+    result = client.get_usage_summary("Lucien", day="0", ndays="1")
+    assert result["profile"] == {"pid": "7", "name": "Lucien"}
+    assert result["window"] == {"start": "11-2-2026", "days": 1, "fromDaysAgo": 0, "toDaysAgo": 0}
+    assert result["totalMinutes"] == 115 and result["totalHours"] == 1.92
+    assert result["categories"][0] == {"id": "71", "name": "Minecraft", "minutes": 90, "hours": 1.5}
+    assert [c["name"] for c in result["categories"]] == ["Minecraft", "Online Games", "YouTube"]
+    assert result["sites"] == [
+        {"site": "minecraft.net", "minutes": 90, "hours": 1.5},
+        {"site": "youtube.com", "minutes": 25, "hours": 0.42},
+    ]
+    assert ("/api/LOGS/usage/categories", {"user": "7", "day": "0", "ndays": "1"}) in stub.calls
+
+
+def test_usage_summary_last_week_window_and_pid_selector():
+    client, _ = summary_client()
+    result = client.get_usage_summary("8", day="6", ndays="7")
+    assert result["profile"] == {"pid": "8", "name": "Emilie"}
+    assert result["window"]["fromDaysAgo"] == 6 and result["window"]["toDaysAgo"] == 0
+
+
+def test_usage_summary_unknown_name_rejected():
+    client, _ = summary_client()
+    with pytest.raises(ValueError):
+        client.get_usage_summary("Nobody")
+
+
+def test_usage_summary_survives_missing_sites_report():
+    client, _ = make_client({
+        "/api/QUERY/all": SUMMARY_SNAPSHOT,
+        "/api/QUERY/categories": SUMMARY_CATEGORIES,
+        "/api/LOGS/usage/categories": SUMMARY_USAGE,
+    })
+    result = client.get_usage_summary("7")
+    assert result["sites"] == [] and result["totalMinutes"] == 115
+
+
+# -----------------------------
 # History
 # -----------------------------
 

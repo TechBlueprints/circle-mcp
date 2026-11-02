@@ -22,10 +22,15 @@ def register(server, circle, lock) -> None:
         return circle("get_snapshot", section=section)
 
     @server.tool()
-    def list_devices() -> list:
-        """List devices on the home network: uid (MAC), names, ip, maker/model, mode, the
-        assigned profile pid, and isGo (managed by the Circle app on the child's phone)."""
-        return circle("list_devices")
+    def list_devices(profile_pid: Optional[str] = None) -> list:
+        """List devices on the home network with their owner: uid (MAC), names, ip, maker/model,
+        mode, profilePid + profileName (the profile the device is assigned to), and isGo
+        (managed by the Circle app on the child's phone).
+
+        Args:
+            profile_pid: Only this profile's devices; a pid or a profile name (e.g. "Lucien")
+        """
+        return circle("list_devices", profile_pid=profile_pid)
 
     @server.tool()
     def list_hardware(check_online: bool = False) -> list:
