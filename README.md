@@ -22,6 +22,9 @@ the `mcp` SDK.
 | `list_categories` | Filter category catalog (id, name, mainCategory, description), to name the ids in usage reports |
 | `list_go_devices` | Child phones/tablets running the Circle app: counts plus each device's id, state, last check-in |
 | `get_profile_badges` | Badges the Circle app shows per profile, `[{pid, badges}]` |
+| `get_usage_by_site` | Usage by site for a profile (raw Circle report) |
+| `get_history` | Allowed or blocked sites visited (`kind`), flattened: site, time, state, category, device uid |
+| `get_time_remaining` | Minutes left today per limited category (limit + today's extensions − used), paused / limits-on flags |
 
 ## Setup
 

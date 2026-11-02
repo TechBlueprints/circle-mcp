@@ -27,12 +27,14 @@ from typing import Optional, Dict
 
 from .api.state import StateMixin, base_url
 
+from .api.usage import UsageMixin
+
 
 class CircleAuthError(RuntimeError):
     """Sign-in or token grant rejected by the Circle/Aura API."""
 
 
-class CircleClient(StateMixin):
+class CircleClient(StateMixin, UsageMixin):
     """Read-only client for Circle parental controls."""
 
     DEFAULT_AURA_BASE = "https://api.aurasvc.io"
@@ -232,14 +234,14 @@ class CircleClient(StateMixin):
         day: str = "0",
         ndays: str = "1",
     ) -> Dict:
-        """Usage by category for a profile. day=0 is today; ndays = days to include."""
+        """Usage by category for a profile, plus `categoryNames`. day=0 is today; ndays = days to include."""
         pid = profile_pid or self._default_profile_pid
         if not pid:
             return {"error": "No profile ID specified"}
 
         qs = urllib.parse.urlencode({"user": str(pid), "day": str(day), "ndays": str(ndays)})
         result = self._request(f"/api/LOGS/usage/categories?{qs}")
-        return result if result else {"error": "Failed to fetch usage data"}
+        return self._attach_category_names(result) if result else {"error": "Failed to fetch usage data"}
 
     def get_profile_usage(
         self,
